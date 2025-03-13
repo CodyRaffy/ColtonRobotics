@@ -73,16 +73,17 @@ public class Robot extends TimedRobot {
   public double kP_elevator = 0.4;
   public double kI_elevator = 1; // start with 0.4
   public double kD_elevator = 0.1; // start with 0.1
+  
   public double errorSum_elevator = 0;
   public double lastTimestamp_elevator = 0;
   public double lastError_elevator = 0;
-  public double iLimit_elevator = 1/2;
-  public double ElevatorPosition, dT_elevator, sensorPosition_elevator, error_elevator, outputSpeed_elevator, errorRate_elevator;
+  public double iLimit_elevator = 0.12; // ~ 10% of total travel
+  public double desiredElevatorPosition, dT_elevator, sensorPosition_elevator, error_elevator, outputSpeed_elevator, errorRate_elevator;
 
 
  
   public double kP_claw = -0.4;
-  public double ClawPosition, sensorPosition_claw, error_claw, outputSpeed_claw;
+  public double clawPosition, sensorPosition_claw, error_claw, outputSpeed_claw;
 
 
 
@@ -95,7 +96,7 @@ public class Robot extends TimedRobot {
 
     errorSum_elevator = 0;
     lastError_elevator = 0;
-    ElevatorPosition = 0;
+    desiredElevatorPosition = 0;
 
     Starting_place = chooser.getSelected();
    
@@ -121,7 +122,7 @@ public class Robot extends TimedRobot {
    
     if (m_Timer.get() < 1) {
       m_MecanumDrive.driveCartesian(0, 0, 0);
-      ElevatorPosition = 0;
+      desiredElevatorPosition = 0;
     } else if(m_Timer.get() < 1.25) {
       m_MecanumDrive.driveCartesian(1, 0, 0);
     } else if (m_Timer.get() < 1.5) {
@@ -129,12 +130,12 @@ public class Robot extends TimedRobot {
     } else if (m_Timer.get() < 2.55){
       m_MecanumDrive.driveCartesian(1, 0, 0);
     } else if (m_Timer.get() < 3){
-      ElevatorPosition = 1.2083333;
+      desiredElevatorPosition = 1.2083333;
     } else if (m_Timer.get() < 4){
       // claw
     } else if (m_Timer.get() < 4.25){
       m_MecanumDrive.driveCartesian(-1, 0, 0);
-      ElevatorPosition = 0;
+      desiredElevatorPosition = 0;
     }  else if (m_Timer.get() < 4.45){
       m_MecanumDrive.driveCartesian(0, (-1*TurnK), 0);
     }  else if (m_Timer.get() < 5.65){
@@ -145,7 +146,7 @@ public class Robot extends TimedRobot {
 
        
     sensorPosition_elevator = m_elevatorEncoder.getDistance() / 4020;
-    error_elevator = ElevatorPosition - sensorPosition_elevator;
+    error_elevator = desiredElevatorPosition - sensorPosition_elevator;
     dT_elevator = m_Timer.getFPGATimestamp() - lastTimestamp_elevator;
 
     if (Math.abs(error_elevator) < iLimit_elevator){
@@ -154,24 +155,17 @@ public class Robot extends TimedRobot {
 
     errorRate_elevator = (error_elevator - lastError_elevator) / dT_elevator;
 
-    outputSpeed_elevator = kP_elevator * error_elevator + kI_elevator * errorSum_elevator + kD_elevator * errorRate_elevator;
+    outputSpeed_elevator = kP_elevator * error_elevator // base rate due only to how far away and kp constant
+        + kI_elevator * errorSum_elevator // Accumulated integral errors times the KI constant
+        + kD_elevator * errorRate_elevator;
 
     //m_elevator.set(outputSpeed_elevator);
 
     lastTimestamp_elevator = m_Timer.getFPGATimestamp();
     lastError_elevator = error_elevator;
 
-
-
-
-
-
-
-
-
-
     sensorPosition_claw = m_clawEncoder.getDistance() / 1; // find variable
-    error_claw = ClawPosition - sensorPosition_claw;
+    error_claw = clawPosition - sensorPosition_claw;
 
     //outputSpeed_claw = kP_claw * error_claw;
 
@@ -223,7 +217,7 @@ public class Robot extends TimedRobot {
     lastTimestamp_elevator = m_Timer.getFPGATimestamp();
     errorSum_elevator = 0;
     lastError_elevator = 0;
-    ElevatorPosition = 0;
+    desiredElevatorPosition = 0;
 
   }
   @Override
@@ -239,39 +233,45 @@ public class Robot extends TimedRobot {
    
    
     if (m_XboxController.getAButtonPressed() == true) {
-      ElevatorPosition = 1.2083333; // 1.2083333
+      desiredElevatorPosition = 1.2083333; // 1.2083333
     } else if (m_XboxController.getBButtonPressed() == true){
-      ElevatorPosition = 0;
+      desiredElevatorPosition = 0;
     } else {
       //gfdhge
     }
 
     sensorPosition_elevator = -m_elevatorEncoder.getDistance() / 4020;
-    error_elevator = ElevatorPosition - sensorPosition_elevator;
+    error_elevator = desiredElevatorPosition - sensorPosition_elevator;
     dT_elevator = m_Timer.getFPGATimestamp() - lastTimestamp_elevator;
+
+    double baseRate = kP_elevator * error_elevator;
+    double integral = kI_elevator * errorSum_elevator;
+    double derivative = kD_elevator * errorRate_elevator;
 
     if (Math.abs(error_elevator) < iLimit_elevator){
       errorSum_elevator += (error_elevator * dT_elevator);
+
+      //log every
+      string log = "Error Elevator: " + error_elevator + " (" + baseRate +  ")" + 
+        " / Error Sum: " + errorSum_elevator + " / Integral Term: " + integral + 
+        " / Error Rate: " + errorRate_elevator + " / Derivative Term: " + derivative;
+
+      System.out.println(log);
     }
 
     errorRate_elevator = (error_elevator - lastError_elevator) / dT_elevator;
 
-    outputSpeed_elevator = kP_elevator * error_elevator +
-      kI_elevator * errorSum_elevator +
-      kD_elevator * errorRate_elevator;
+    outputSpeed_elevator = baseRate // base rate due only to how far away and kp constant
+        + integral // Accumulated integral errors times the KI constant
+        + derivative;
 
     m_elevator.set(outputSpeed_elevator);
 
     lastTimestamp_elevator = m_Timer.getFPGATimestamp();
     lastError_elevator = error_elevator;
 
-
-
-
-
-
     sensorPosition_claw = m_clawEncoder.getDistance() / 1; // find variable
-    error_claw = ClawPosition - sensorPosition_claw;
+    error_claw = clawPosition - sensorPosition_claw;
 
     outputSpeed_claw = kP_claw * error_claw;
 
@@ -281,8 +281,6 @@ public class Robot extends TimedRobot {
 
     if (m_XboxController.getXButton() == true){
       System.out.println(m_elevatorEncoder.getDistance() + " - ");
-    }
-
-   
+    } 
   }  
 }
